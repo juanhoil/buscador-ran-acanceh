@@ -1,0 +1,1194 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Buscador RAN · Acanceh</title>
+<style>
+/* ---------------------------------------------------------------------------
+   Plan de diseno
+   Color  : verde institucional agrario (el RAN es materia agraria) sobre un
+            neutro calido con sesgo verde; nada de grises puros.
+   Tipo   : pila del sistema. Es una decision de rendimiento: cero peticiones
+            de red, arranque instantaneo y funciona sin conexion. Para datos
+            se usa una pila monoespaciada con cifras tabulares.
+   Layout : cabecera fija (busqueda + orden) sobre una lista virtualizada
+            tipo contactos, con barra de estado al pie.
+--------------------------------------------------------------------------- */
+:root {
+  --bg: #f5f7f4;
+  --superficie: #ffffff;
+  --superficie-alt: #eef1ec;
+  --fg: #161a16;
+  --fg-suave: #5b665d;
+  --fg-tenue: #8b958d;
+  --borde: #e0e5de;
+  --acento: #1e6b3c;
+  --acento-fg: #ffffff;
+  --acento-suave: #e4efe7;
+  --sombra: 0 1px 2px rgba(20, 30, 22, .06), 0 4px 12px rgba(20, 30, 22, .05);
+  --foco: #1e6b3c;
+
+  --fuente: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --fuente-datos: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+
+  --alto-fila: 64px;
+  --radio: 10px;
+  --gutter: 16px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101310;
+    --superficie: #191d19;
+    --superficie-alt: #212621;
+    --fg: #e7ece7;
+    --fg-suave: #9aa69b;
+    --fg-tenue: #6f7a71;
+    --borde: #2a312a;
+    --acento: #6cc48d;
+    --acento-fg: #0d1a12;
+    --acento-suave: #1b2b20;
+    --sombra: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 12px rgba(0, 0, 0, .3);
+    --foco: #6cc48d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101310;
+  --superficie: #191d19;
+  --superficie-alt: #212621;
+  --fg: #e7ece7;
+  --fg-suave: #9aa69b;
+  --fg-tenue: #6f7a71;
+  --borde: #2a312a;
+  --acento: #6cc48d;
+  --acento-fg: #0d1a12;
+  --acento-suave: #1b2b20;
+  --sombra: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 12px rgba(0, 0, 0, .3);
+  --foco: #6cc48d;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--fuente);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- cabecera */
+.cabecera {
+  flex: none;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borde);
+  padding-block: 10px 8px;
+  padding-inline: var(--gutter);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10;
+}
+
+.titulo-fila {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.titulo {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -.01em;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.titulo .sub {
+  font-weight: 450;
+  color: var(--fg-suave);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.conteo {
+  font-family: var(--fuente-datos);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-suave);
+  white-space: nowrap;
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- busqueda */
+.buscador {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.buscador .lupa {
+  position: absolute;
+  left: 11px;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-tenue);
+  pointer-events: none;
+}
+
+#q {
+  width: 100%;
+  font: inherit;
+  font-size: 15px;
+  color: var(--fg);
+  background: var(--superficie-alt);
+  border: 1px solid transparent;
+  border-radius: var(--radio);
+  padding-block: 9px;
+  padding-inline: 34px 34px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+#q::placeholder { color: var(--fg-tenue); }
+
+#q:focus {
+  outline: none;
+  border-color: var(--acento);
+  background: var(--superficie);
+  box-shadow: 0 0 0 3px var(--acento-suave);
+}
+
+#limpiar {
+  position: absolute;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg-tenue);
+  cursor: pointer;
+  font-size: 17px;
+  line-height: 1;
+  padding: 0;
+}
+
+#limpiar:hover { background: var(--borde); color: var(--fg); }
+
+/* ------------------------------------------------------------------- orden */
+.orden {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 1px;
+  margin-inline: calc(var(--gutter) * -1);
+  padding-inline: var(--gutter);
+}
+.orden::-webkit-scrollbar { display: none; }
+
+.orden .etiqueta {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--fg-tenue);
+  flex: none;
+  margin-right: 2px;
+}
+
+.chip {
+  flex: none;
+  font: inherit;
+  font-size: 13px;
+  padding-block: 5px;
+  padding-inline: 11px;
+  border-radius: 999px;
+  border: 1px solid var(--borde);
+  background: var(--superficie);
+  color: var(--fg-suave);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chip:hover { border-color: var(--fg-tenue); color: var(--fg); }
+
+.chip[aria-pressed="true"] {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: var(--acento-fg);
+  font-weight: 550;
+}
+
+.chip .flecha { font-size: 11px; opacity: .85; }
+
+/* ------------------------------------------------------------------- lista */
+.lista {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-inline: var(--gutter);
+}
+
+.lienzo { position: relative; }
+
+.fila {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--alto-fila);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-inline: 4px;
+  border-bottom: 1px solid var(--borde);
+  background: transparent;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.fila:hover { background: var(--superficie-alt); }
+.fila:focus-visible {
+  outline: 2px solid var(--foco);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+.avatar {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  background: hsl(var(--h, 140) 30% 88%);
+  color: hsl(var(--h, 140) 42% 26%);
+  user-select: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .avatar {
+    background: hsl(var(--h, 140) 22% 23%);
+    color: hsl(var(--h, 140) 48% 74%);
+  }
+}
+:root[data-theme="dark"] .avatar {
+  background: hsl(var(--h, 140) 22% 23%);
+  color: hsl(var(--h, 140) 48% 74%);
+}
+
+.texto {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.principal {
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.secundaria {
+  font-size: 12.5px;
+  color: var(--fg-suave);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.secundaria .id {
+  font-family: var(--fuente-datos);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-tenue);
+}
+
+.punto {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--fg-tenue);
+  flex: none;
+}
+
+mark {
+  background: transparent;
+  color: inherit;
+  border-radius: 3px;
+  box-shadow: 0 -2px 0 0 var(--acento-suave) inset, 0 2px 0 0 var(--acento-suave);
+  padding-inline: 1px;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ estados */
+.aviso {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--fg-suave);
+  max-width: 46ch;
+  margin-inline: auto;
+}
+
+.aviso strong {
+  display: block;
+  color: var(--fg);
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.aviso code {
+  font-family: var(--fuente-datos);
+  font-size: 12.5px;
+  background: var(--superficie-alt);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+/* -------------------------------------------------------------- pie estado */
+.pie {
+  flex: none;
+  border-top: 1px solid var(--borde);
+  background: var(--superficie);
+  padding-block: 6px;
+  padding-inline: var(--gutter);
+  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg-suave);
+  min-height: 32px;
+}
+
+.pie .led {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--fg-tenue);
+}
+
+.pie[data-estado="ok"] .led { background: var(--acento); }
+.pie[data-estado="cache"] .led { background: #d99100; }
+.pie[data-estado="error"] .led { background: #c0392b; }
+.pie[data-estado="cargando"] .led { background: var(--fg-tenue); animation: pulso 1.2s ease-in-out infinite; }
+
+@keyframes pulso { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) {
+  .pie[data-estado="cargando"] .led { animation: none; }
+}
+
+.pie .texto-pie { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pie button {
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid var(--borde);
+  background: var(--superficie);
+  color: var(--fg-suave);
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+  flex: none;
+}
+.pie button:hover { border-color: var(--fg-tenue); color: var(--fg); }
+
+/* ------------------------------------------------------------------ detalle */
+.sheet {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 14, 11, .45);
+  display: grid;
+  place-items: end center;
+  z-index: 50;
+  padding: 0;
+}
+.sheet[hidden] { display: none; }
+
+.sheet-caja {
+  background: var(--superficie);
+  width: 100%;
+  max-width: 560px;
+  max-height: 88%;
+  overflow-y: auto;
+  border-radius: 16px 16px 0 0;
+  box-shadow: var(--sombra);
+  padding: 18px var(--gutter) calc(18px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 640px) {
+  .sheet { place-items: center; }
+  .sheet-caja { border-radius: 16px; max-height: 80%; }
+}
+
+.sheet-caja h2 {
+  margin: 0 0 2px;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -.01em;
+  text-wrap: balance;
+}
+
+.sheet-caja .sheet-sub {
+  color: var(--fg-suave);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.datos {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--borde);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.datos div {
+  background: var(--superficie);
+  padding: 9px 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.datos dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--fg-tenue);
+  flex: none;
+}
+
+.datos dd {
+  margin: 0;
+  font-size: 14px;
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.datos dd.mono { font-family: var(--fuente-datos); font-variant-numeric: tabular-nums; }
+
+#cerrar {
+  width: 100%;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 550;
+  padding-block: 11px;
+  border: 0;
+  border-radius: var(--radio);
+  background: var(--acento);
+  color: var(--acento-fg);
+  cursor: pointer;
+}
+#cerrar:hover { filter: brightness(1.08); }
+
+/* ------------------------------------------------------------------- movil */
+@media (max-width: 480px) {
+  :root { --alto-fila: 60px; }
+  .titulo { font-size: 16px; }
+  .titulo .sub { display: none; }
+  .avatar { width: 38px; height: 38px; font-size: 13px; }
+}
+
+.oculto-visual {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+</style>
+</head>
+<body>
+
+<header class="cabecera">
+  <div class="titulo-fila">
+    <h1 class="titulo">Sujetos agrarios <span class="sub" id="sub"></span></h1>
+    <span class="conteo" id="conteo" aria-live="polite"></span>
+  </div>
+
+  <div class="buscador">
+    <svg class="lupa" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>
+    </svg>
+    <label class="oculto-visual" for="q">Buscar por nombre o apellido</label>
+    <input id="q" type="search" autocomplete="off" autocorrect="off"
+           autocapitalize="off" spellcheck="false"
+           placeholder="Buscar nombre, apellido o ID…">
+    <button id="limpiar" type="button" title="Limpiar búsqueda" aria-label="Limpiar búsqueda" hidden>×</button>
+  </div>
+
+  <div class="orden" role="group" aria-label="Ordenar resultados">
+    <span class="etiqueta">Ordenar</span>
+    <button class="chip" type="button" data-campo="nombre" aria-pressed="true">
+      Nombre <span class="flecha">A–Z</span>
+    </button>
+    <button class="chip" type="button" data-campo="paterno" aria-pressed="false">
+      Apellido paterno <span class="flecha">A–Z</span>
+    </button>
+  </div>
+</header>
+
+<main class="lista" id="lista" tabindex="-1">
+  <div class="lienzo" id="lienzo"></div>
+  <div class="aviso" id="aviso" hidden></div>
+</main>
+
+<footer class="pie" id="pie" data-estado="cargando">
+  <span class="led" aria-hidden="true"></span>
+  <span class="texto-pie" id="pie-texto">Cargando datos…</span>
+  <button id="refrescar" type="button" hidden>Actualizar</button>
+</footer>
+
+<div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-nombre">
+  <div class="sheet-caja">
+    <h2 id="sheet-nombre"></h2>
+    <p class="sheet-sub" id="sheet-sub"></p>
+    <dl class="datos" id="sheet-datos"></dl>
+    <button id="cerrar" type="button">Cerrar</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ===========================================================================
+   Buscador local de sujetos agrarios del RAN.
+
+   Estrategia
+   ----------
+   Almacenamiento : el Excel se convierte una vez con generar_datos.py a
+                    datos.js, en formato COLUMNAR (columnas + filas). Ocupa
+                    2.4x menos que un array de objetos y se parsea igual.
+                    Se carga con <script src> y no con fetch() para que la
+                    pagina funcione tambien abriendo el archivo con doble
+                    clic (file://), donde fetch() local lo bloquea CORS.
+
+   Cache          : IndexedDB guarda el dataset completo. Al abrir, se pinta
+                    primero lo cacheado (instantaneo y sin conexion) y
+                    despues se revalida contra datos.js comparando el hash
+                    de contenido; solo se repinta si cambio de verdad.
+
+   Busqueda       : claves normalizadas (minusculas, sin acentos) calculadas
+                    una sola vez. Consulta multi-termino con AND, de modo que
+                    "canul virginio" encuentra "VIRGINIO CANUL EK" sin
+                    importar el orden. Sin indices invertidos: con 2.6k filas
+                    el recorrido lineal tarda menos de 1 ms.
+
+   Orden          : 4 arreglos de indices precalculados (2 campos x 2
+                    sentidos). Filtrar nunca ordena, asi que el coste por
+                    tecla es O(n) y no O(n log n).
+
+   Render         : lista virtualizada. Solo se pintan las filas visibles.
+   =========================================================================== */
+
+const ARCHIVO_DATOS = "datos.js";   // generado por generar_datos.py
+const BD_NOMBRE = "ran-buscador";
+const BD_VERSION = 1;
+const ALMACEN = "datasets";
+const CLAVE = "actual";
+const OVERSCAN = 6;                // filas extra arriba y abajo
+
+const $ = (id) => document.getElementById(id);
+
+const elLista = $("lista");
+const elLienzo = $("lienzo");
+const elAviso = $("aviso");
+const elQ = $("q");
+const elLimpiar = $("limpiar");
+const elConteo = $("conteo");
+const elSub = $("sub");
+const elPie = $("pie");
+const elPieTexto = $("pie-texto");
+const elRefrescar = $("refrescar");
+const elSheet = $("sheet");
+
+/* ------------------------------------------------------------------ estado */
+const E = {
+  columnas: [],      // nombres originales de columna, en su orden
+  filas: [],         // celdas crudas
+  version: null,
+  consulta: null,
+  generado: null,
+
+  // indices derivados
+  iNombre: -1, iPaterno: -1, iMaterno: -1, iCalidad: -1, iId: -1, iNucleo: -1,
+  buscar: [],        // clave normalizada por fila (nombre + apellidos + id)
+  orden: {},         // { "nombre:1": [...], "nombre:-1": [...], ... }
+
+  campo: "nombre",
+  dir: 1,
+  terminos: [],
+  filtrados: null,   // indices de fila que pasan el filtro, ya ordenados
+  desde: 0,
+  hasta: 0,
+  alto: 64,
+};
+
+/* ============================================================ utilidades */
+
+/** Minusculas y sin acentos: "NÚÑEZ" -> "nunez". */
+function normalizar(s) {
+  return String(s)
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+}
+
+/** Color estable a partir del nombre, para el avatar tipo contacto. */
+function tono(texto) {
+  let h = 0;
+  for (let i = 0; i < texto.length; i++) h = (h * 31 + texto.charCodeAt(i)) % 360;
+  return h;
+}
+
+function iniciales(nombre, paterno) {
+  const a = (nombre || "").trim().charAt(0);
+  const b = (paterno || "").trim().charAt(0);
+  return (a + b).toUpperCase() || "?";
+}
+
+/* ============================================================== IndexedDB */
+
+function abrirBD() {
+  return new Promise((resolver, rechazar) => {
+    if (!("indexedDB" in window)) return rechazar(new Error("sin IndexedDB"));
+    const req = indexedDB.open(BD_NOMBRE, BD_VERSION);
+    req.onupgradeneeded = () => {
+      const bd = req.result;
+      if (!bd.objectStoreNames.contains(ALMACEN)) bd.createObjectStore(ALMACEN);
+    };
+    req.onsuccess = () => resolver(req.result);
+    req.onerror = () => rechazar(req.error);
+  });
+}
+
+/** Lee el dataset cacheado. Devuelve null si no hay nada util. */
+async function leerCache() {
+  try {
+    const bd = await abrirBD();
+    return await new Promise((resolver) => {
+      const tx = bd.transaction(ALMACEN, "readonly");
+      const req = tx.objectStore(ALMACEN).get(CLAVE);
+      req.onsuccess = () => resolver(req.result || null);
+      req.onerror = () => resolver(null);
+    });
+  } catch (e) {
+    return null;   // ventana privada, almacenamiento bloqueado, etc.
+  }
+}
+
+async function guardarCache(datos) {
+  try {
+    const bd = await abrirBD();
+    await new Promise((resolver) => {
+      const tx = bd.transaction(ALMACEN, "readwrite");
+      tx.objectStore(ALMACEN).put(datos, CLAVE);
+      tx.oncomplete = resolver;
+      tx.onerror = resolver;
+      tx.onabort = resolver;
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* ========================================================= carga de datos */
+
+/**
+ * Carga datos.js con una etiqueta <script>. Se usa script y no fetch()
+ * porque asi funciona tambien en file://, donde fetch() esta bloqueado.
+ */
+function cargarArchivoDatos() {
+  return new Promise((resolver) => {
+    const s = document.createElement("script");
+    s.src = ARCHIVO_DATOS + "?v=" + Date.now();   // evita la cache HTTP
+    s.onload = () => {
+      const d = window.DATOS_RAN;
+      s.remove();
+      resolver(d && Array.isArray(d.filas) && Array.isArray(d.columnas) ? d : null);
+    };
+    s.onerror = () => { s.remove(); resolver(null); };
+    document.head.appendChild(s);
+  });
+}
+
+/* ====================================================== indices derivados */
+
+/** Localiza las columnas por nombre, sin asumir posiciones fijas. */
+function mapearColumnas() {
+  const busca = (nombre) =>
+    E.columnas.findIndex((c) => normalizar(c) === normalizar(nombre));
+  E.iNombre = busca("NOMBRE");
+  E.iPaterno = busca("APELLIDO PATERNO");
+  E.iMaterno = busca("APELLIDO MATERNO");
+  E.iCalidad = busca("CALIDAD");
+  E.iId = busca("ID SIMCR");
+  E.iNucleo = busca("NUCLEO AGRARIO");
+}
+
+/** Precalcula claves de busqueda y los 4 ordenes. Se hace una sola vez. */
+function construirIndices() {
+  mapearColumnas();
+
+  const n = E.filas.length;
+  const cN = E.iNombre, cP = E.iPaterno, cM = E.iMaterno, cI = E.iId;
+
+  // Clave de busqueda: nombre + apellidos + ID, todo normalizado.
+  E.buscar = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const f = E.filas[i];
+    E.buscar[i] = normalizar(
+      (f[cN] || "") + " " + (f[cP] || "") + " " + (f[cM] || "") + " " + (f[cI] || "")
+    );
+  }
+
+  // Claves de orden: nombre y apellido paterno (con el nombre como desempate).
+  const col = new Intl.Collator("es", { sensitivity: "base", numeric: true });
+  const claveNombre = new Array(n);
+  const clavePaterno = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const f = E.filas[i];
+    const nom = normalizar(f[cN] || "");
+    const pat = normalizar(f[cP] || "");
+    const mat = normalizar(f[cM] || "");
+    claveNombre[i] = nom + "\u0000" + pat + "\u0000" + mat;
+    clavePaterno[i] = pat + "\u0000" + mat + "\u0000" + nom;
+  }
+
+  const armaOrden = (claves, dir) => {
+    const idx = Array.from({ length: n }, (_, i) => i);
+    idx.sort((a, b) => {
+      const r = col.compare(claves[a], claves[b]);
+      return r !== 0 ? r * dir : a - b;    // desempate estable por posicion
+    });
+    return idx;
+  };
+
+  E.orden = {
+    "nombre:1": armaOrden(claveNombre, 1),
+    "nombre:-1": armaOrden(claveNombre, -1),
+    "paterno:1": armaOrden(clavePaterno, 1),
+    "paterno:-1": armaOrden(clavePaterno, -1),
+  };
+}
+
+/* ================================================================ filtrado */
+
+/**
+ * Filtra y devuelve los indices de fila que pasan, ya en el orden activo.
+ * Todos los terminos deben aparecer (AND) en cualquier posicion.
+ */
+function filtrar() {
+  const base = E.orden[E.campo + ":" + E.dir];
+  const t = E.terminos;
+  if (t.length === 0) return base;
+
+  const out = [];
+  const buscar = E.buscar;
+  for (let k = 0; k < base.length; k++) {
+    const i = base[k];
+    const texto = buscar[i];
+    let ok = true;
+    for (let j = 0; j < t.length; j++) {
+      if (texto.indexOf(t[j]) === -1) { ok = false; break; }
+    }
+    if (ok) out.push(i);
+  }
+  return out;
+}
+
+/* ================================================================== render */
+
+/** Texto de la fila partido en nodos, resaltando los terminos buscados. */
+function pintarNombre(destino, texto, terminos) {
+  destino.textContent = "";
+  if (!terminos.length) { destino.textContent = texto; return; }
+
+  const plano = normalizar(texto);
+  const marcas = new Array(plano.length).fill(false);
+
+  for (const t of terminos) {
+    let desde = 0, p;
+    while ((p = plano.indexOf(t, desde)) !== -1) {
+      for (let k = p; k < p + t.length; k++) marcas[k] = true;
+      desde = p + t.length;
+    }
+  }
+
+  let i = 0;
+  while (i < texto.length) {
+    const activo = marcas[i];
+    let j = i;
+    while (j < texto.length && marcas[j] === activo) j++;
+    const trozo = texto.slice(i, j);
+    if (activo) {
+      const m = document.createElement("mark");
+      m.textContent = trozo;
+      destino.appendChild(m);
+    } else {
+      destino.appendChild(document.createTextNode(trozo));
+    }
+    i = j;
+  }
+}
+
+function crearFila(i) {
+  const f = E.filas[i];
+  const nombre = f[E.iNombre] || "";
+  const paterno = E.iPaterno >= 0 ? f[E.iPaterno] || "" : "";
+  const materno = E.iMaterno >= 0 ? f[E.iMaterno] || "" : "";
+  const calidad = E.iCalidad >= 0 ? f[E.iCalidad] || "" : "";
+  const id = E.iId >= 0 ? f[E.iId] || "" : "";
+
+  const completo = [nombre, paterno, materno].filter(Boolean).join(" ");
+
+  const fila = document.createElement("button");
+  fila.type = "button";
+  fila.className = "fila";
+  fila.dataset.i = i;
+
+  const av = document.createElement("span");
+  av.className = "avatar";
+  av.style.setProperty("--h", tono(completo));
+  av.textContent = iniciales(nombre, paterno);
+
+  const texto = document.createElement("span");
+  texto.className = "texto";
+
+  const principal = document.createElement("span");
+  principal.className = "principal";
+  pintarNombre(principal, completo, E.terminos);
+
+  const secundaria = document.createElement("span");
+  secundaria.className = "secundaria";
+  if (calidad) {
+    const c = document.createElement("span");
+    c.textContent = calidad;
+    secundaria.appendChild(c);
+  }
+  if (calidad && id) {
+    const p = document.createElement("span");
+    p.className = "punto";
+    secundaria.appendChild(p);
+  }
+  if (id) {
+    const s = document.createElement("span");
+    s.className = "id";
+    s.textContent = "ID " + id;
+    secundaria.appendChild(s);
+  }
+
+  texto.append(principal, secundaria);
+  fila.append(av, texto);
+  return fila;
+}
+
+function render() {
+  const total = E.filtrados ? E.filtrados.length : 0;
+  elConteo.textContent = total.toLocaleString("es-MX") +
+    (total === 1 ? " registro" : " registros");
+
+  if (total === 0) {
+    elLienzo.style.height = "0px";
+    elLienzo.textContent = "";
+    mostrarAviso(
+      E.terminos.length ? "Sin coincidencias" : "Sin datos",
+      E.terminos.length
+        ? "Ningún registro contiene todos los términos escritos. Prueba con menos palabras o revisa la ortografía."
+        : "No hay registros cargados."
+    );
+    return;
+  }
+  ocultarAviso();
+
+  const alto = elLista.clientHeight;
+  const primera = Math.max(0, Math.floor(elLista.scrollTop / E.alto) - OVERSCAN);
+  const visibles = Math.ceil(alto / E.alto) + OVERSCAN * 2;
+  const ultima = Math.min(total, primera + visibles);
+
+  if (primera === E.desde && ultima === E.hasta && elLienzo.childElementCount) return;
+  E.desde = primera;
+  E.hasta = ultima;
+
+  elLienzo.style.height = total * E.alto + "px";
+
+  const frag = document.createDocumentFragment();
+  for (let k = primera; k < ultima; k++) {
+    const fila = crearFila(E.filtrados[k]);
+    fila.style.transform = "translateY(" + k * E.alto + "px)";
+    frag.appendChild(fila);
+  }
+  elLienzo.textContent = "";
+  elLienzo.appendChild(frag);
+}
+
+function mostrarAviso(titulo, cuerpo) {
+  elAviso.textContent = "";
+  const s = document.createElement("strong");
+  s.textContent = titulo;
+  elAviso.append(s, document.createTextNode(cuerpo));
+  elAviso.hidden = false;
+}
+
+function ocultarAviso() { elAviso.hidden = true; }
+
+/* ================================================================ acciones */
+
+function recalcular() {
+  E.filtrados = filtrar();
+  elLista.scrollTop = 0;
+  E.desde = E.hasta = -1;
+  render();
+}
+
+function alEscribir() {
+  E.terminos = normalizar(elQ.value).split(/\s+/).filter(Boolean);
+  elLimpiar.hidden = elQ.value.length === 0;
+  recalcular();
+}
+
+function alOrdenar(campo) {
+  if (E.campo === campo) {
+    E.dir = -E.dir;                 // segundo clic: invierte el sentido
+  } else {
+    E.campo = campo;
+    E.dir = 1;
+  }
+  for (const chip of document.querySelectorAll(".chip")) {
+    const activo = chip.dataset.campo === E.campo;
+    chip.setAttribute("aria-pressed", String(activo));
+    chip.querySelector(".flecha").textContent = activo
+      ? (E.dir === 1 ? "A–Z" : "Z–A")
+      : "A–Z";
+  }
+  recalcular();
+}
+
+function abrirDetalle(i) {
+  const f = E.filas[i];
+  $("sheet-nombre").textContent =
+    [f[E.iNombre], f[E.iPaterno], f[E.iMaterno]].filter(Boolean).join(" ");
+
+  const calidad = E.iCalidad >= 0 ? f[E.iCalidad] : "";
+  const nucleo = E.iNucleo >= 0 ? f[E.iNucleo] : "";
+  const partes = [];
+  if (calidad) partes.push(calidad.charAt(0) + calidad.slice(1).toLowerCase());
+  if (nucleo) partes.push("Núcleo " + nucleo);
+  $("sheet-sub").textContent = partes.join(" · ");
+
+  const dl = $("sheet-datos");
+  dl.textContent = "";
+  E.columnas.forEach((nombre, c) => {
+    const fila = document.createElement("div");
+    const dt = document.createElement("dt");
+    dt.textContent = nombre;
+    const dd = document.createElement("dd");
+    const valor = f[c] || "—";
+    dd.textContent = valor;
+    if (/^\d+$/.test(valor)) dd.className = "mono";
+    fila.append(dt, dd);
+    dl.appendChild(fila);
+  });
+
+  elSheet.hidden = false;
+  $("cerrar").focus();
+}
+
+function cerrarDetalle() { elSheet.hidden = true; }
+
+/* ============================================================ estado de UI */
+
+function estado(texto, tipo, mostrarRefrescar) {
+  elPieTexto.textContent = texto;
+  elPie.dataset.estado = tipo;
+  elRefrescar.hidden = !mostrarRefrescar;
+}
+
+function aplicarDatos(datos) {
+  E.columnas = datos.columnas;
+  E.filas = datos.filas;
+  E.version = datos.version;
+  E.consulta = datos.consulta || null;
+  E.generado = datos.generado || null;
+  construirIndices();
+
+  if (E.consulta) {
+    const partes = [E.consulta.nucleo, E.consulta.municipio, E.consulta.tipo]
+      .filter(Boolean);
+    elSub.textContent = partes.join(" · ");
+  }
+  document.title = "Buscador RAN · " +
+    ((E.consulta && E.consulta.nucleo) || "Sujetos agrarios");
+
+  E.filtrados = filtrar();
+  E.desde = E.hasta = -1;
+  elLista.scrollTop = 0;
+  render();
+}
+
+/* ================================================================= arranque */
+
+async function iniciar() {
+  E.alto = parseFloat(getComputedStyle(document.documentElement)
+    .getPropertyValue("--alto-fila")) || 64;
+
+  // 1) Pintar de inmediato lo que haya en cache: instantaneo y sin conexion.
+  const cache = await leerCache();
+  if (cache && cache.filas && cache.filas.length) {
+    aplicarDatos(cache);
+    estado("Copia local · " + cache.filas.length.toLocaleString("es-MX") +
+           " registros · v" + cache.version, "cache", true);
+  }
+
+  // 2) Revalidar contra datos.js y actualizar solo si el hash cambio.
+  await sincronizar(true);
+}
+
+async function sincronizar(esArranque) {
+  if (!esArranque) estado("Buscando actualizaciones…", "cargando", false);
+
+  const datos = await cargarArchivoDatos();
+
+  if (!datos) {
+    if (E.filas.length) {
+      estado("Sin acceso a datos.js · usando la copia local (v" + E.version + ")",
+             "cache", true);
+    } else {
+      estado("No se pudieron cargar los datos", "error", true);
+      mostrarAviso(
+        "No se encontraron los datos",
+        "No hay copia local y no se pudo leer el archivo. Comprueba que " +
+        "datos.js está junto a index.html y vuelve a cargar la página."
+      );
+    }
+    return;
+  }
+
+  if (E.version === datos.version && E.filas.length) {
+    estado("Al día · " + E.filas.length.toLocaleString("es-MX") +
+           " registros · v" + datos.version, "ok", false);
+    return;
+  }
+
+  const cambio = E.version !== datos.version;
+  aplicarDatos(datos);
+  const guardado = await guardarCache(datos);
+
+  estado(
+    (cambio && !esArranque ? "Datos actualizados · " : "Al día · ") +
+    datos.filas.length.toLocaleString("es-MX") + " registros · v" + datos.version +
+    (guardado ? "" : " · sin caché"),
+    "ok", false
+  );
+}
+
+/* ================================================================== eventos */
+
+elQ.addEventListener("input", alEscribir);
+
+elLimpiar.addEventListener("click", () => {
+  elQ.value = "";
+  alEscribir();
+  elQ.focus();
+});
+
+for (const chip of document.querySelectorAll(".chip")) {
+  chip.addEventListener("click", () => alOrdenar(chip.dataset.campo));
+}
+
+elLista.addEventListener("scroll", render, { passive: true });
+
+elLienzo.addEventListener("click", (ev) => {
+  const fila = ev.target.closest(".fila");
+  if (fila) abrirDetalle(Number(fila.dataset.i));
+});
+
+$("cerrar").addEventListener("click", cerrarDetalle);
+elSheet.addEventListener("click", (ev) => { if (ev.target === elSheet) cerrarDetalle(); });
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") {
+    if (!elSheet.hidden) { cerrarDetalle(); return; }
+    if (elQ.value) { elQ.value = ""; alEscribir(); }
+  }
+  // "/" enfoca el buscador, salvo si ya se esta escribiendo en un campo.
+  if (ev.key === "/" && document.activeElement !== elQ) {
+    ev.preventDefault();
+    elQ.focus();
+  }
+});
+
+elRefrescar.addEventListener("click", () => sincronizar(false));
+
+// Al recuperar la conexion, revalidar los datos.
+window.addEventListener("online", () => sincronizar(false));
+
+// Al volver a la pestana, revalidar solo si la copia tiene mas de 10 minutos.
+let ultimaSync = Date.now();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Date.now() - ultimaSync > 600000) {
+    ultimaSync = Date.now();
+    sincronizar(false);
+  }
+});
+
+let tResize;
+window.addEventListener("resize", () => {
+  clearTimeout(tResize);
+  tResize = setTimeout(() => { E.desde = E.hasta = -1; render(); }, 120);
+});
+
+iniciar();
+</script>
+</body>
+</html>

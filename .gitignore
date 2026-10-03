@@ -1,0 +1,34 @@
+tex.text
+# Archivos temporales de Office (cuando Excel queda abierto)
+~$*.xlsx
+~$*.xls
+~$*.docx
+~$*.doc
+*.tmp
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Artefactos de debug que ya no usamos
+debug_*.html
+debug_*.png
+_inspect*.py
+_inspect*.html
+_inspect*.png
+_probar.py
+_chars.py
+_analisis.py
+_*.png
+_escritorio.png
+_movil.png
